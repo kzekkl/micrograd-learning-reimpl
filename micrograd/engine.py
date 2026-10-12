@@ -1,94 +1,97 @@
+# M2：从零实现你的 Value 类（你的引擎从这里开始）
+class Value:#节点类
 
-class Value:
-    """ stores a single scalar value and its gradient """
-
-    def __init__(self, data, _children=(), _op=''):
-        self.data = data
-        self.grad = 0
-        # internal variables used for autograd graph construction
+    def __init__(self, data, grad = 0, prev = (), op = ""):
+        self.data = data    #数值，用于前向传播
+        self.grad = grad    #梯度，反向传播给出
+        self.prev = prev
+        self.op = op
         self._backward = lambda: None
-        self._prev = set(_children)
-        self._op = _op # the op that produced this node, for graphviz / debugging / etc
 
+    #1.1 重载+
     def __add__(self, other):
-        other = other if isinstance(other, Value) else Value(other)
-        out = Value(self.data + other.data, (self, other), '+')
+        if  not isinstance(other,Value):
+            other = Value(other)
 
+        data_res = self.data + other.data
+        res = Value(data_res, 0, (self,other), "+ ")
         def _backward():
-            self.grad += out.grad
-            other.grad += out.grad
-        out._backward = _backward
+            self.grad += res.grad
+            other.grad += res.grad
 
-        return out
+        res._backward = _backward
+        return res
 
+    #1.2 左加
+    def __radd__(self, other):
+        return self.__add__(other)
+
+    #2.1 重载*
     def __mul__(self, other):
-        other = other if isinstance(other, Value) else Value(other)
-        out = Value(self.data * other.data, (self, other), '*')
+        if not isinstance(other, Value):
+            other = Value(other)
 
+        data_res = self.data * other.data
+        res = Value(data_res, 0, (self,other), "* ")
         def _backward():
-            self.grad += other.data * out.grad
-            other.grad += self.data * out.grad
-        out._backward = _backward
+            self.grad += other.data * res.grad
+            other.grad += self.data * res.grad
 
-        return out
+        res._backward = _backward
+        return res
 
+    #2.2 处理数字左乘
+    def __rmul__(self, other):
+        return self.__mul__(other)
+
+    #3. 重载**
     def __pow__(self, other):
-        assert isinstance(other, (int, float)), "only supporting int/float powers for now"
-        out = Value(self.data**other, (self,), f'**{other}')
+        if not isinstance(other, int):
+            return NotImplemented
+        return Value(self.data**other)
 
-        def _backward():
-            self.grad += (other * self.data**(other-1)) * out.grad
-        out._backward = _backward
+    #4.1 重载/
+    def __truediv__(self, other):
+        if not isinstance(other, (int, float)):
+            return NotImplemented
+        return Value(self.data/other)
 
-        return out
+    #4.2 数字左c除
+    def __rtruediv__(self, other):
+        if not isinstance(other, (int, float)):
+            return NotImplemented
+        return Value(other/self.data)
 
+    #5. 定义relu
     def relu(self):
-        out = Value(0 if self.data < 0 else self.data, (self,), 'ReLU')
-
+        data_res = self.data if self.data>0 else 0
+        res = Value(data_res, 0, (self,), "re ")
         def _backward():
-            self.grad += (out.data > 0) * out.grad
-        out._backward = _backward
+            self.grad += res.grad if self.data>0 else 0
 
-        return out
+        res._backward = _backward
+        return res
 
+    #6. 反向传播
     def backward(self):
-
-        # topological order all of the children in the graph
-        topo = []
-        visited = set()
-        def build_topo(v):
-            if v not in visited:
-                visited.add(v)
-                for child in v._prev:
-                    build_topo(child)
-                topo.append(v)
-        build_topo(self)
-
-        # go one variable at a time and apply the chain rule to get its gradient
         self.grad = 1
-        for v in reversed(topo):
-            v._backward()
+        seen = set()
+        order = []
 
-    def __neg__(self): # -self
-        return self * -1
+        def collect(v):
+            if v in seen:
+                return
+            
+            seen.add(v)
+            for p in v.prev:
+                collect(p)
 
-    def __radd__(self, other): # other + self
-        return self + other
+            order.append(v)
 
-    def __sub__(self, other): # self - other
-        return self + (-other)
+        collect(self)
+        for node in reversed(order):
+            node._backward()
 
-    def __rsub__(self, other): # other - self
-        return other + (-self)
-
-    def __rmul__(self, other): # other * self
-        return self * other
-
-    def __truediv__(self, other): # self / other
-        return self * other**-1
-
-    def __rtruediv__(self, other): # other / self
-        return other * self**-1
-
-    def __repr__(self):
-        return f"Value(data={self.data}, grad={self.grad})"
+    #7. 取负
+    def __neg__(self):
+        return Value(-self.data)
