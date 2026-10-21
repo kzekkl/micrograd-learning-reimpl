@@ -1,5 +1,5 @@
 # M2：从零实现你的 Value 类（你的引擎从这里开始）
-class Value:#节点类
+class Value():#节点类
 
     def __init__(self, data, grad = 0, prev = (), op = ""):
         self.data = data    #数值，用于前向传播
@@ -48,19 +48,35 @@ class Value:#节点类
     def __pow__(self, other):
         if not isinstance(other, int):
             return NotImplemented
-        return Value(self.data**other)
+
+        res = Value(self.data**other, 0, (self,), "** ")
+        def _backward():
+            self.grad += other * self.data ** (other - 1) * res.grad
+
+        res._backward = _backward
+        return res
 
     #4.1 重载/
     def __truediv__(self, other):
         if not isinstance(other, (int, float)):
             return NotImplemented
-        return Value(self.data/other)
+        res = Value(self.data/other, 0, (self, ),"/ ")
+        def _backward():
+            self.grad += 1.0 / other * res.grad
+
+        res._backward = _backward
+        return res
 
     #4.2 数字左c除
     def __rtruediv__(self, other):
         if not isinstance(other, (int, float)):
             return NotImplemented
-        return Value(other/self.data)
+        res = Value(other/self.data, 0, (self,), "r/ ")
+        def _backward():
+            self.grad += -other / self.data ** 2 * res.grad
+
+        res._backward = _backward
+        return res
 
     #5. 定义relu
     def relu(self):
@@ -94,4 +110,20 @@ class Value:#节点类
 
     #7. 取负
     def __neg__(self):
-        return Value(-self.data)
+        res = Value(-self.data, 0, (self, ), "- ")
+        def _backward():
+            self.grad += -res.grad
+
+        res._backward = _backward
+        return res
+
+    #8. 重载-
+    def __sub__(self, other):
+        if not isinstance(other, Value):
+            other = Value(other)
+        
+        return self.__add__(other.__neg__())
+
+    def __rsub__(self,other):
+        other = Value(other)
+        return other.__add__(self.__neg__())
